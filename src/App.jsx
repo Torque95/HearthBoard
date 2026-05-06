@@ -71,7 +71,7 @@ function TopBar({ tab, setTab, dark, onToggleDark, accent, onAccentChange, onSet
     <div style={{ height:64, display:'flex', alignItems:'center', borderBottom:'1px solid var(--border)', background:'var(--titlebar,var(--bg))', padding:'0 20px', gap:8, flexShrink:0 }}>
       <div style={{ display:'flex', alignItems:'center', gap:10, marginRight:8 }}>
         <span style={{ fontSize:26 }}>🏡</span>
-        <span style={{ fontFamily:'var(--font-display)', fontSize:18, fontWeight:600, background:`linear-gradient(135deg,${accent},${accent}bb)`, WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent' }}>HearthBoard</span>
+        <span key={accent} style={{ fontFamily:'var(--font-display)', fontSize:18, fontWeight:600, background:`linear-gradient(135deg,${accent},${accent}bb)`, WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent' }}>HearthBoard</span>
       </div>
       <div style={{ display:'flex', gap:2, flex:1 }}>
         {TABS.map(t => (
