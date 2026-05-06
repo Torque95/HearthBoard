@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>HearthBoard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lora:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, #root { height: 100%; width: 100%; overflow: hidden; }
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    * { -webkit-tap-highlight-color: transparent; }
+    button, a, [role="button"], input, select, textarea { touch-action: manipulation; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.25); border-radius: 4px; }
+    input[type="date"]::-webkit-calendar-picker-indicator,
+    input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(0.5); cursor: pointer; }
+
+    @keyframes ripple-expand {
+      0%   { transform: scale(0); opacity: 0.35; }
+      100% { transform: scale(1); opacity: 0; }
+    }
+    .ripple {
+      position: absolute; border-radius: 50%;
+      animation: ripple-expand 0.5s ease-out forwards;
+      pointer-events: none;
+    }
+
+    :root {
+      --font-display: 'Lora', Georgia, serif;
+      --font-body:    'Plus Jakarta Sans', sans-serif;
+      --radius-sm:    10px;
+      --radius-md:    16px;
+      --radius-lg:    24px;
+      --transition:   0.22s ease;
+    }
+
+    body.dark {
+      --bg:          #0f1117;
+      --bg-card:     rgba(255,255,255,0.045);
+      --bg-card-hov: rgba(255,255,255,0.08);
+      --bg-input:    rgba(255,255,255,0.08);
+      --bg-modal:    #181c28;
+      --border:      rgba(255,255,255,0.09);
+      --text:        #f0f0ee;
+      --text-sub:    rgba(240,240,238,0.5);
+      --text-muted:  rgba(240,240,238,0.25);
+      --shadow:      0 8px 40px rgba(0,0,0,0.55);
+      --shadow-sm:   0 2px 12px rgba(0,0,0,0.35);
+      --titlebar:    rgba(0,0,0,0.4);
+    }
+
+    body.light {
+      --bg:          #f4f1ec;
+      --bg-card:     rgba(255,255,255,0.82);
+      --bg-card-hov: rgba(255,255,255,1);
+      --bg-input:    rgba(0,0,0,0.055);
+      --bg-modal:    #ffffff;
+      --border:      rgba(0,0,0,0.09);
+      --text:        #1a1915;
+      --text-sub:    rgba(26,25,21,0.52);
+      --text-muted:  rgba(26,25,21,0.28);
+      --shadow:      0 8px 40px rgba(0,0,0,0.13);
+      --shadow-sm:   0 2px 12px rgba(0,0,0,0.08);
+      --titlebar:    rgba(0,0,0,0.05);
+    }
+
+    body { background: var(--bg); color: var(--text); transition: background var(--transition), color var(--transition); }
+  </style>
+</head>
+<body class="dark">
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
+</body>
+</html>
