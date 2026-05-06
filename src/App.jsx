@@ -510,7 +510,7 @@ export default function App() {
   }, [accounts, credentials])
 
   useEffect(() => { if (loaded) syncCalendars() }, [loaded])
-  useEffect(() => { const t = setInterval(syncCalendars, 15*60000); return () => clearInterval(t) }, [syncCalendars])
+  useEffect(() => { const t = setInterval(syncCalendars, 5*60000); return () => clearInterval(t) }, [syncCalendars])
 
   useEffect(() => {
     if (!loaded || !storage.photoFolder || !window.electronAPI) return

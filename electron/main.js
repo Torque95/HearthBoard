@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, screen, dialog } = require('electron')
+const { execSync } = require('child_process')
 const path = require('path')
 const fs = require('fs')
 const chokidar = require('chokidar')
@@ -13,6 +14,20 @@ function loadStorage() {
 }
 function saveStorage(data) {
   try { fs.writeFileSync(storageFile, JSON.stringify(data, null, 2)) } catch {}
+}
+
+// ── Auto-update cron job ──────────────────────────────────────────────────────
+function setupCronJob() {
+  try {
+    const existing = execSync('crontab -l 2>/dev/null || echo ""').toString()
+    if (existing.includes('hearthboard')) return  // already installed
+    const job = '0 0 * * * cd ~/hearthboard && git pull --quiet && npm install --silent >> ~/hearthboard-update.log 2>&1\n'
+    const newCron = existing.trimEnd() + '\n' + job
+    execSync(`echo "${newCron}" | crontab -`)
+    console.log('HearthBoard: auto-update cron job installed')
+  } catch(e) {
+    console.warn('HearthBoard: could not install cron job:', e.message)
+  }
 }
 
 // ── Photo folder watcher ──────────────────────────────────────────────────────
@@ -50,7 +65,6 @@ function createWindow() {
     },
   })
 
-  // Disable GPU for VM/older Intel compatibility
   app.commandLine.appendSwitch('disable-gpu')
   app.commandLine.appendSwitch('disable-software-rasterizer')
 
@@ -64,17 +78,18 @@ function createWindow() {
   if (storage.photoFolder) watchPhotoFolder(storage.photoFolder)
 }
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  setupCronJob()
+  createWindow()
+})
+
 app.on('window-all-closed', () => app.quit())
 
-// ── IPC: Window ───────────────────────────────────────────────────────────────
+// ── IPC ───────────────────────────────────────────────────────────────────────
 ipcMain.on('win-close', () => app.quit())
-
-// ── IPC: Storage ──────────────────────────────────────────────────────────────
 ipcMain.handle('storage-get', () => loadStorage())
 ipcMain.handle('storage-set', (_, data) => { saveStorage(data); return true })
 
-// ── IPC: Photos ───────────────────────────────────────────────────────────────
 ipcMain.handle('pick-photo-folder', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: 'Choose your photo folder',
@@ -90,7 +105,6 @@ ipcMain.handle('pick-photo-folder', async () => {
 })
 ipcMain.handle('scan-photo-folder', (_, folder) => scanFolder(folder))
 
-// ── IPC: Google OAuth popup ───────────────────────────────────────────────────
 ipcMain.handle('google-oauth', async (_, { clientId, redirectUri }) => {
   return new Promise((resolve, reject) => {
     const scopes = [
