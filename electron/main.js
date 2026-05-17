@@ -20,12 +20,12 @@ function saveStorage(data) {
 function setupCronJob() {
   try {
     const existing = execSync('crontab -l 2>/dev/null || echo ""').toString()
-    if (existing.includes('hearthboard')) return  // already installed
-    const job = '0 0 * * * cd ~/hearthboard && git pull --quiet && npm install --silent >> ~/hearthboard-update.log 2>&1\n'
+    if (existing.includes('hearthboard')) return
+    const job = '*/5 * * * * cd ~/hearthboard && git pull --quiet && npm install --silent >> ~/hearthboard-update.log 2>&1\n'
     const newCron = existing.trimEnd() + '\n' + job
     execSync(`echo "${newCron}" | crontab -`)
     console.log('HearthBoard: auto-update cron job installed')
-  } catch(e) {
+  } catch (e) {
     console.warn('HearthBoard: could not install cron job:', e.message)
   }
 }
@@ -35,29 +35,49 @@ const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp']
 let photoWatcher = null
 let mainWindow = null
 
-function isImage(f) { return IMAGE_EXTS.includes(path.extname(f).toLowerCase()) }
-function scanFolder(folder) {
-  try { return fs.readdirSync(folder).filter(isImage).map(f => path.join(folder, f)) } catch { return [] }
+function isImage(f) {
+  return IMAGE_EXTS.includes(path.extname(f).toLowerCase())
 }
-function watchPhotoFolder(folder) {
-  if (photoWatcher) photoWatcher.close()
-  if (!folder || !fs.existsSync(folder)) return
-  photoWatcher = chokidar.watch(folder, { persistent:true, ignoreInitial:false, depth:0 })
-  const send = () => mainWindow?.webContents?.send('photos-updated', scanFolder(folder))
-  photoWatcher.on('add', send).on('unlink', send).on('ready', send)
+
+function scanFolder(folder) {
+  try {
+    return fs.readdirSync(folder)
+      .filter(isImage)
+      .map(f => path.join(folder, f))
+  } catch {
+    return []
+  }
+}
+
+function watchFolder(folder) {
+  if (photoWatcher) { photoWatcher.close(); photoWatcher = null }
+  if (!folder) return
+
+  // Send initial scan immediately
+  const initial = scanFolder(folder)
+  if (mainWindow) mainWindow.webContents.send('photos-updated', initial)
+
+  // Watch for additions/removals
+  photoWatcher = chokidar.watch(folder, {
+    ignored: f => !isImage(f) && !fs.statSync(f).isDirectory(),
+    persistent: true,
+    ignoreInitial: true,
+  })
+  photoWatcher.on('add',    () => { if (mainWindow) mainWindow.webContents.send('photos-updated', scanFolder(folder)) })
+  photoWatcher.on('unlink', () => { if (mainWindow) mainWindow.webContents.send('photos-updated', scanFolder(folder)) })
 }
 
 // ── Window ────────────────────────────────────────────────────────────────────
 function createWindow() {
-  const { width, height } = screen.getPrimaryDisplay().bounds
+  const { width, height } = screen.getPrimaryDisplay().workAreaSize
 
   mainWindow = new BrowserWindow({
-    width, height, x:0, y:0,
-    fullscreen: true,
+    width,
+    height,
+    fullscreen: !isDev,
     kiosk: !isDev,
-    frame: false,
-    resizable: false,
-    backgroundColor: '#0f1117',
+    autoHideMenuBar: true,
+    backgroundColor: '#0F1117',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -65,83 +85,97 @@ function createWindow() {
     },
   })
 
-  app.commandLine.appendSwitch('disable-gpu')
-  app.commandLine.appendSwitch('disable-software-rasterizer')
-
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173')
+    mainWindow.webContents.openDevTools({ mode: 'detach' })
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
   }
 
-  const storage = loadStorage()
-  if (storage.photoFolder) watchPhotoFolder(storage.photoFolder)
+  // Re-watch the saved photo folder after window loads
+  mainWindow.webContents.on('did-finish-load', () => {
+    const stored = loadStorage()
+    if (stored.photoFolder) watchFolder(stored.photoFolder)
+  })
 }
 
+// ── App lifecycle ─────────────────────────────────────────────────────────────
 app.whenReady().then(() => {
-  setupCronJob()
+  if (!isDev) setupCronJob()
   createWindow()
+  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 })
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 
-app.on('window-all-closed', () => app.quit())
-
-// ── IPC ───────────────────────────────────────────────────────────────────────
-ipcMain.on('win-close', () => app.quit())
+// ── IPC: Storage ──────────────────────────────────────────────────────────────
 ipcMain.handle('storage-get', () => loadStorage())
 ipcMain.handle('storage-set', (_, data) => { saveStorage(data); return true })
 
+// ── IPC: Window controls ──────────────────────────────────────────────────────
+ipcMain.on('win-close', () => app.quit())
+
+// ── IPC: Touch keyboard ───────────────────────────────────────────────────────
+// Fires onboard (installed via: sudo apt install onboard) when any text input is focused.
+// On Windows/Mac this is a no-op — the native OSK handles it automatically.
+const { exec } = require('child_process')
+ipcMain.on('show-keyboard', () => {
+  exec('pgrep onboard', (err, stdout) => {
+    if (stdout.trim()) {
+      // Already running — bring to front
+      exec('onboard')
+    } else {
+      exec('onboard &', () => {})
+    }
+  })
+})
+
+// ── IPC: Photo folder ─────────────────────────────────────────────────────────
 ipcMain.handle('pick-photo-folder', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Choose your photo folder',
+    title: 'Select your photos folder',
     properties: ['openDirectory'],
   })
   if (result.canceled || !result.filePaths.length) return null
   const folder = result.filePaths[0]
-  const storage = loadStorage()
-  storage.photoFolder = folder
-  saveStorage(storage)
-  watchPhotoFolder(folder)
-  return { folderPath: folder, photos: scanFolder(folder) }
+  // Persist the folder choice
+  const stored = loadStorage()
+  saveStorage({ ...stored, photoFolder: folder })
+  watchFolder(folder)
+  return { folder, photos: scanFolder(folder) }
 })
-ipcMain.handle('scan-photo-folder', (_, folder) => scanFolder(folder))
 
-ipcMain.handle('google-oauth', async (_, { clientId, redirectUri }) => {
+ipcMain.handle('scan-photo-folder', (_, folder) => {
+  return scanFolder(folder)
+})
+
+// ── IPC: Google OAuth popup ───────────────────────────────────────────────────
+ipcMain.handle('google-oauth', async (_, { url }) => {
   return new Promise((resolve, reject) => {
-    const scopes = [
-      'https://www.googleapis.com/auth/calendar.readonly',
-      'https://www.googleapis.com/auth/userinfo.email',
-      'https://www.googleapis.com/auth/userinfo.profile',
-    ].join(' ')
-
-    const authUrl =
-      `https://accounts.google.com/o/oauth2/v2/auth` +
-      `?client_id=${encodeURIComponent(clientId)}` +
-      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-      `&response_type=code` +
-      `&scope=${encodeURIComponent(scopes)}` +
-      `&access_type=offline&prompt=consent`
-
     const popup = new BrowserWindow({
-      width:500, height:660,
-      parent: mainWindow, modal: true,
-      title: 'Sign in with Google',
-      backgroundColor: '#ffffff',
-      webPreferences: { nodeIntegration:false, contextIsolation:true },
+      width: 500,
+      height: 650,
+      parent: mainWindow,
+      modal: true,
+      autoHideMenuBar: true,
+      webPreferences: { nodeIntegration: false, contextIsolation: true },
     })
 
-    popup.loadURL(authUrl)
+    popup.loadURL(url)
 
-    const handle = (_, url) => {
-      if (!url.startsWith(redirectUri)) return
-      const u = new URL(url)
-      popup.close()
-      const code = u.searchParams.get('code')
-      const err  = u.searchParams.get('error')
-      code ? resolve(code) : reject(new Error(err || 'cancelled'))
+    const handle = (_, redirectUrl) => {
+      try {
+        const u = new URL(redirectUrl)
+        if (u.hostname === 'localhost') {
+          const code = u.searchParams.get('code')
+          const error = u.searchParams.get('error')
+          popup.close()
+          code ? resolve(code) : reject(new Error(error || 'cancelled'))
+        }
+      } catch {}
     }
 
     popup.webContents.on('will-redirect', handle)
-    popup.webContents.on('will-navigate',  handle)
+    popup.webContents.on('will-navigate', handle)
     popup.on('closed', () => reject(new Error('Window closed')))
   })
 })
